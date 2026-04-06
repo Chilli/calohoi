@@ -1676,56 +1676,48 @@ function App() {
                 <MacroWheel size={132} />
               </div>
 
-              <div className="mt-3 grid gap-3">
-                <div className="grid grid-cols-2 gap-3">
-                  <label className="grid min-w-0 gap-1">
-                    <div className="text-[11px] font-medium text-zinc-500">Protein (g)</div>
+              <div className="mt-3 grid gap-4">
+                {([
+                  { key: 'proteinG' as const, label: 'Protein', color: '#22c55e', max: 600, unit: 'g', kcalPer: 4 },
+                  { key: 'carbsG' as const, label: 'Carbs', color: '#0ea5e9', max: 1000, unit: 'g', kcalPer: 4 },
+                  { key: 'fatG' as const, label: 'Fat', color: '#8b5cf6', max: 400, unit: 'g', kcalPer: 9 },
+                  { key: 'fiberG' as const, label: 'Fiber', color: '#f59e0b', max: 200, unit: 'g', kcalPer: 2 },
+                ] as const).map((m) => (
+                  <div key={m.key}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: m.color }} />
+                        <span className="text-xs font-medium text-zinc-700">{m.label}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          className="h-7 w-16 min-w-0 rounded-lg border border-zinc-200 bg-zinc-50 px-1.5 text-center text-xs tabular-nums"
+                          inputMode="numeric"
+                          value={macroTargets[m.key]}
+                          onChange={(e) =>
+                            setMacroTargets((t) => ({ ...t, [m.key]: clampNumber(Number(e.target.value || 0), 0, m.max) }))
+                          }
+                        />
+                        <span className="text-[10px] text-zinc-400">{m.unit}</span>
+                      </div>
+                    </div>
                     <input
-                      className="h-9 w-full min-w-0 rounded-xl border border-zinc-200 bg-zinc-50 px-2 text-sm"
-                      inputMode="numeric"
-                      value={macroTargets.proteinG}
+                      type="range"
+                      min={0}
+                      max={m.max}
+                      step={1}
+                      value={macroTargets[m.key]}
                       onChange={(e) =>
-                        setMacroTargets((t) => ({ ...t, proteinG: clampNumber(Number(e.target.value || 0), 0, 600) }))
+                        setMacroTargets((t) => ({ ...t, [m.key]: clampNumber(Number(e.target.value), 0, m.max) }))
                       }
+                      className="mt-1 h-2 w-full cursor-pointer appearance-none rounded-full bg-zinc-200 accent-current"
+                      style={{ accentColor: m.color } as React.CSSProperties}
                     />
-                  </label>
-                  <label className="grid min-w-0 gap-1">
-                    <div className="text-[11px] font-medium text-zinc-500">Carbs (g)</div>
-                    <input
-                      className="h-9 w-full min-w-0 rounded-xl border border-zinc-200 bg-zinc-50 px-2 text-sm"
-                      inputMode="numeric"
-                      value={macroTargets.carbsG}
-                      onChange={(e) =>
-                        setMacroTargets((t) => ({ ...t, carbsG: clampNumber(Number(e.target.value || 0), 0, 1000) }))
-                      }
-                    />
-                  </label>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <label className="grid min-w-0 gap-1">
-                    <div className="text-[11px] font-medium text-zinc-500">Fat (g)</div>
-                    <input
-                      className="h-9 w-full min-w-0 rounded-xl border border-zinc-200 bg-zinc-50 px-2 text-sm"
-                      inputMode="numeric"
-                      value={macroTargets.fatG}
-                      onChange={(e) =>
-                        setMacroTargets((t) => ({ ...t, fatG: clampNumber(Number(e.target.value || 0), 0, 400) }))
-                      }
-                    />
-                  </label>
-                  <label className="grid min-w-0 gap-1">
-                    <div className="text-[11px] font-medium text-zinc-500">Fiber (g)</div>
-                    <input
-                      className="h-9 w-full min-w-0 rounded-xl border border-zinc-200 bg-zinc-50 px-2 text-sm"
-                      inputMode="numeric"
-                      value={macroTargets.fiberG}
-                      onChange={(e) =>
-                        setMacroTargets((t) => ({ ...t, fiberG: clampNumber(Number(e.target.value || 0), 0, 200) }))
-                      }
-                    />
-                  </label>
-                </div>
+                    <div className="mt-0.5 text-right text-[10px] text-zinc-400">
+                      {Math.round(macroTargets[m.key] * m.kcalPer)} kcal
+                    </div>
+                  </div>
+                ))}
 
                 <div className="rounded-2xl bg-zinc-50 p-3">
                   <div className="flex items-center justify-between text-sm">
