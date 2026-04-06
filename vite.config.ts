@@ -17,19 +17,19 @@ export default defineConfig({
         name: 'Calorieohhoi',
         short_name: 'Calorieohhoi',
         description: 'Offline-first calorie & macro tracker',
-        start_url: '/',
-        scope: '/',
+        start_url: '/calohoi/',
+        scope: '/calohoi/',
         display: 'standalone',
         background_color: '#fafafa',
         theme_color: '#10b981',
         icons: [
           {
-            src: '/favicon.svg',
+            src: 'favicon.svg',
             sizes: 'any',
             type: 'image/svg+xml',
           },
           {
-            src: '/icons.svg',
+            src: 'icons.svg',
             sizes: 'any',
             type: 'image/svg+xml',
           },
