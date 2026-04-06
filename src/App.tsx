@@ -1310,7 +1310,7 @@ function App() {
         </Dialog>
 
         <Dialog open={addFoodOpen} onOpenChange={setAddFoodOpen}>
-          <DialogContent className="!inset-0 !bottom-0 !top-0 !max-h-none !w-full !max-w-none !translate-x-0 !translate-y-0 !rounded-none sm:!inset-auto sm:!bottom-auto sm:!left-1/2 sm:!top-8 sm:!max-h-[85dvh] sm:!max-w-md sm:!-translate-x-1/2 sm:!translate-y-0 sm:!rounded-2xl overflow-y-auto">
+          <DialogContent className="!left-3 !right-3 !top-3 !bottom-3 !h-[calc(100dvh-1.5rem)] !w-auto !max-w-none !translate-x-0 !translate-y-0 !rounded-3xl overflow-y-auto sm:!left-1/2 sm:!right-auto sm:!top-8 sm:!bottom-auto sm:!h-auto sm:!max-h-[85dvh] sm:!max-w-md sm:!-translate-x-1/2 sm:!translate-y-0 sm:!rounded-2xl">
             <DialogHeader>
               <DialogTitle>Add food — {MEALS.find((m) => m.key === currentMeal)?.label}</DialogTitle>
               <DialogDescription>Search all foods, favorite foods, or curated Norwegian foods and add by grams.</DialogDescription>
