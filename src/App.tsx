@@ -460,6 +460,22 @@ function App() {
     }
   }, [macroTargets.carbsG, macroTargets.fatG, macroTargets.fiberG, macroTargets.proteinG])
 
+  const prevGoalRef = useRef(goalCalories)
+  useEffect(() => {
+    const prev = prevGoalRef.current
+    prevGoalRef.current = goalCalories
+    if (prev === goalCalories || goalCalories <= 0) return
+    const oldTotal = Math.max(1, macroTargetCalories)
+    const scale = goalCalories / oldTotal
+    setMacroTargets((t) => ({
+      ...t,
+      proteinG: clampNumber(Math.round(t.proteinG * scale * 10) / 10, 0, 600),
+      carbsG: clampNumber(Math.round(t.carbsG * scale * 10) / 10, 0, 1000),
+      fatG: clampNumber(Math.round(t.fatG * scale * 10) / 10, 0, 400),
+      fiberG: clampNumber(Math.round(t.fiberG * scale * 10) / 10, 0, 200),
+    }))
+  }, [goalCalories])
+
   function MacroWheel({ size = 120 }: { size?: number }) {
     const stroke = 14
     const r = (size - stroke) / 2
@@ -516,10 +532,16 @@ function App() {
             })}
           </svg>
           <div className="pointer-events-none absolute inset-0 grid place-items-center text-center leading-none">
-            <div className="text-[10px] font-medium text-zinc-500">Macros</div>
-            <div className="mt-1 text-base font-semibold text-zinc-900">{pctText}%</div>
-            <div className="mt-1 text-[10px] text-zinc-500">of goal</div>
+            <div className="text-lg font-semibold text-zinc-900">{pctText}%</div>
           </div>
+        </div>
+        <div className="mt-2 flex flex-wrap justify-center gap-x-3 gap-y-1">
+          {parts.map((p) => (
+            <div key={p.key} className="flex items-center gap-1 text-[10px] text-zinc-600">
+              <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: p.color }} />
+              {p.key === 'carbs' ? 'Carbs' : p.key === 'protein' ? 'Protein' : p.key === 'fat' ? 'Fat' : 'Fiber'} {Math.round(p.frac * 100)}%
+            </div>
+          ))}
         </div>
       </div>
     )
