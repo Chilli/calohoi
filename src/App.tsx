@@ -75,18 +75,20 @@ function newId() {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`
 }
 
+type FoodNutrients = {
+  caloriesKcal?: number
+  proteinG?: number
+  carbsG?: number
+  fatG?: number
+  fiberG?: number
+}
+
 type OffProduct = {
   code: string
   productName: string
   brands?: string
   imageUrl?: string
-  nutrimentsPer100g: {
-    caloriesKcal?: number
-    proteinG?: number
-    carbsG?: number
-    fatG?: number
-    fiberG?: number
-  }
+  nutrimentsPer100g: FoodNutrients
 }
 
 type OffSearchItem = {
@@ -94,7 +96,53 @@ type OffSearchItem = {
   productName: string
   brands?: string
   imageUrl?: string
-  nutrimentsPer100g: OffProduct['nutrimentsPer100g']
+  source?: 'mvt' | 'off'
+  nutrimentsPer100g: FoodNutrients
+}
+
+type MvtFood = { n: string; k: number; p: number; c: number; f: number; fi: number }
+let mvtCache: MvtFood[] | null = null
+async function loadMvt(): Promise<MvtFood[]> {
+  if (mvtCache) return mvtCache
+  const base = import.meta.env.BASE_URL ?? '/'
+  const res = await fetch(`${base}matvaretabellen.json`)
+  if (!res.ok) return []
+  mvtCache = (await res.json()) as MvtFood[]
+  return mvtCache
+}
+
+function searchMvt(foods: MvtFood[], query: string): OffSearchItem[] {
+  const q = query.toLowerCase()
+  const words = q.split(/\s+/).filter(Boolean)
+  const scored = foods
+    .map((f) => {
+      const name = f.n.toLowerCase()
+      const allMatch = words.every((w) => name.includes(w))
+      if (!allMatch) return null
+      const startsWithQ = name.startsWith(q)
+      const isRaw = name.includes('rå')
+      let score = 0
+      if (startsWithQ) score += 100
+      if (isRaw) score += 50
+      if (name === q) score += 200
+      score -= name.length
+      return { food: f, score }
+    })
+    .filter((x): x is { food: MvtFood; score: number } => x !== null)
+  scored.sort((a, b) => b.score - a.score)
+  return scored.slice(0, 15).map((s) => ({
+    code: `mvt-${s.food.n}`,
+    productName: s.food.n,
+    brands: 'Matvaretabellen',
+    source: 'mvt' as const,
+    nutrimentsPer100g: {
+      caloriesKcal: s.food.k,
+      proteinG: s.food.p,
+      carbsG: s.food.c,
+      fatG: s.food.f,
+      fiberG: s.food.fi,
+    },
+  }))
 }
 
 async function searchOffProducts(query: string, signal?: AbortSignal): Promise<OffSearchItem[]> {
@@ -341,13 +389,25 @@ function App() {
     const t = window.setTimeout(() => {
       setFoodSearchLoading(true)
       setFoodSearchError(null)
-      void searchOffProducts(q, controller.signal)
-        .then((items) => setFoodSearchResults(items))
-        .catch((e) => {
+      void (async () => {
+        try {
+          const mvtFoods = await loadMvt()
+          const mvtResults = searchMvt(mvtFoods, q)
+          if (controller.signal.aborted) return
+          setFoodSearchResults(mvtResults)
+
+          const offResults = await searchOffProducts(q, controller.signal)
+          if (controller.signal.aborted) return
+          const mvtCodes = new Set(mvtResults.map((r) => r.code))
+          const merged = [...mvtResults, ...offResults.filter((r) => !mvtCodes.has(r.code))]
+          setFoodSearchResults(merged)
+        } catch (e) {
           if ((e as { name?: string }).name === 'AbortError') return
           setFoodSearchError(e instanceof Error ? e.message : 'Search failed')
-        })
-        .finally(() => setFoodSearchLoading(false))
+        } finally {
+          setFoodSearchLoading(false)
+        }
+      })()
     }, 250)
 
     return () => {
@@ -1240,7 +1300,7 @@ function App() {
                   {foodSearchResults.map((r) => (
                     <button
                       key={r.code}
-                      className="flex items-center gap-3 rounded-2xl border border-zinc-200 bg-white p-3 text-left"
+                      className={`flex items-center gap-3 rounded-2xl border p-3 text-left ${r.source === 'mvt' ? 'border-emerald-200 bg-emerald-50/50' : 'border-zinc-200 bg-white'}`}
                       onClick={() => setSelectedFood(r)}
                     >
                       {r.imageUrl ? (
@@ -1250,12 +1310,15 @@ function App() {
                           className="h-10 w-10 rounded-xl border border-zinc-200 object-cover"
                         />
                       ) : (
-                        <div className="h-10 w-10 rounded-xl border border-zinc-200 bg-zinc-50" />
+                        <div className={`grid h-10 w-10 place-items-center rounded-xl border text-lg ${r.source === 'mvt' ? 'border-emerald-200 bg-emerald-100' : 'border-zinc-200 bg-zinc-50'}`}>
+                          {r.source === 'mvt' ? '🇳🇴' : '🔍'}
+                        </div>
                       )}
                       <div className="min-w-0 flex-1">
                         <div className="truncate text-sm font-semibold text-zinc-900">{r.productName}</div>
-                        <div className="mt-0.5 text-[11px] text-zinc-500">
-                          {r.brands ? `${r.brands} · ` : ''}{r.nutrimentsPer100g.caloriesKcal ?? '?'} kcal/100g
+                        <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-zinc-500">
+                          {r.source === 'mvt' && <span className="rounded bg-emerald-100 px-1 py-0.5 text-[9px] font-semibold text-emerald-700">MVT</span>}
+                          {r.brands && r.source !== 'mvt' ? `${r.brands} · ` : ''}{r.nutrimentsPer100g.caloriesKcal ?? '?'} kcal/100g
                         </div>
                       </div>
                     </button>
