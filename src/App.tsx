@@ -1460,7 +1460,7 @@ function App() {
                   <label className="grid gap-1">
                     <div className="text-[11px] font-medium text-zinc-500">Sex</div>
                     <select
-                      className="h-9 rounded-xl border border-zinc-200 bg-zinc-50 px-2 text-sm"
+                      className="h-9 w-full min-w-0 rounded-xl border border-zinc-200 bg-zinc-50 px-2 text-sm"
                       value={profileDraft.sex}
                       onChange={(e) => setProfileDraft((d) => ({ ...d, sex: e.target.value as Sex }))}
                     >
@@ -1471,7 +1471,7 @@ function App() {
                   <label className="grid gap-1">
                     <div className="text-[11px] font-medium text-zinc-500">Birthdate</div>
                     <input
-                      className="h-9 rounded-xl border border-zinc-200 bg-zinc-50 px-2 text-sm"
+                      className="h-9 w-full min-w-0 rounded-xl border border-zinc-200 bg-zinc-50 px-2 text-sm"
                       type="date"
                       value={profileDraft.birthdateISO}
                       onChange={(e) => setProfileDraft((d) => ({ ...d, birthdateISO: e.target.value }))}
@@ -1485,7 +1485,7 @@ function App() {
                   <label className="grid gap-1">
                     <div className="text-[11px] font-medium text-zinc-500">Height (cm)</div>
                     <input
-                      className="h-9 rounded-xl border border-zinc-200 bg-zinc-50 px-2 text-sm"
+                      className="h-9 w-full min-w-0 rounded-xl border border-zinc-200 bg-zinc-50 px-2 text-sm"
                       inputMode="numeric"
                       value={profileDraft.heightCm}
                       onChange={(e) => setProfileDraft((d) => ({ ...d, heightCm: e.target.value }))}
@@ -1494,7 +1494,7 @@ function App() {
                   <label className="grid gap-1">
                     <div className="text-[11px] font-medium text-zinc-500">Weight (kg)</div>
                     <input
-                      className="h-9 rounded-xl border border-zinc-200 bg-zinc-50 px-2 text-sm"
+                      className="h-9 w-full min-w-0 rounded-xl border border-zinc-200 bg-zinc-50 px-2 text-sm"
                       inputMode="numeric"
                       value={profileDraft.weightKg}
                       onChange={(e) => setProfileDraft((d) => ({ ...d, weightKg: e.target.value }))}
@@ -1505,7 +1505,7 @@ function App() {
                 <label className="grid gap-1">
                   <div className="text-[11px] font-medium text-zinc-500">Activity level</div>
                   <select
-                    className="h-9 rounded-xl border border-zinc-200 bg-zinc-50 px-2 text-sm"
+                    className="h-9 w-full min-w-0 rounded-xl border border-zinc-200 bg-zinc-50 px-2 text-sm"
                     value={profileDraft.activity}
                     onChange={(e) => setProfileDraft((d) => ({ ...d, activity: e.target.value as ActivityLevel }))}
                   >
@@ -1520,7 +1520,7 @@ function App() {
                   <label className="grid gap-1">
                     <div className="text-[11px] font-medium text-zinc-500">Goal</div>
                     <select
-                      className="h-9 rounded-xl border border-zinc-200 bg-zinc-50 px-2 text-sm"
+                      className="h-9 w-full min-w-0 rounded-xl border border-zinc-200 bg-zinc-50 px-2 text-sm"
                       value={profileDraft.goalMode}
                       onChange={(e) => setProfileDraft((d) => ({ ...d, goalMode: e.target.value as GoalMode }))}
                     >
@@ -1532,7 +1532,7 @@ function App() {
                   <label className="grid gap-1">
                     <div className="text-[11px] font-medium text-zinc-500">Adjustment (kcal)</div>
                     <input
-                      className="h-9 rounded-xl border border-zinc-200 bg-zinc-50 px-2 text-sm"
+                      className="h-9 w-full min-w-0 rounded-xl border border-zinc-200 bg-zinc-50 px-2 text-sm"
                       inputMode="numeric"
                       value={profileDraft.goalDeltaKcal}
                       onChange={(e) => setProfileDraft((d) => ({ ...d, goalDeltaKcal: e.target.value }))}
@@ -1615,10 +1615,10 @@ function App() {
 
               <div className="mt-3 grid gap-3">
                 <div className="grid grid-cols-2 gap-3">
-                  <label className="grid gap-1">
+                  <label className="grid min-w-0 gap-1">
                     <div className="text-[11px] font-medium text-zinc-500">Protein (g)</div>
                     <input
-                      className="h-9 rounded-xl border border-zinc-200 bg-zinc-50 px-2 text-sm"
+                      className="h-9 w-full min-w-0 rounded-xl border border-zinc-200 bg-zinc-50 px-2 text-sm"
                       inputMode="numeric"
                       value={macroTargets.proteinG}
                       onChange={(e) =>
@@ -1626,10 +1626,10 @@ function App() {
                       }
                     />
                   </label>
-                  <label className="grid gap-1">
+                  <label className="grid min-w-0 gap-1">
                     <div className="text-[11px] font-medium text-zinc-500">Carbs (g)</div>
                     <input
-                      className="h-9 rounded-xl border border-zinc-200 bg-zinc-50 px-2 text-sm"
+                      className="h-9 w-full min-w-0 rounded-xl border border-zinc-200 bg-zinc-50 px-2 text-sm"
                       inputMode="numeric"
                       value={macroTargets.carbsG}
                       onChange={(e) =>
@@ -1640,10 +1640,10 @@ function App() {
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
-                  <label className="grid gap-1">
+                  <label className="grid min-w-0 gap-1">
                     <div className="text-[11px] font-medium text-zinc-500">Fat (g)</div>
                     <input
-                      className="h-9 rounded-xl border border-zinc-200 bg-zinc-50 px-2 text-sm"
+                      className="h-9 w-full min-w-0 rounded-xl border border-zinc-200 bg-zinc-50 px-2 text-sm"
                       inputMode="numeric"
                       value={macroTargets.fatG}
                       onChange={(e) =>
@@ -1651,10 +1651,10 @@ function App() {
                       }
                     />
                   </label>
-                  <label className="grid gap-1">
+                  <label className="grid min-w-0 gap-1">
                     <div className="text-[11px] font-medium text-zinc-500">Fiber (g)</div>
                     <input
-                      className="h-9 rounded-xl border border-zinc-200 bg-zinc-50 px-2 text-sm"
+                      className="h-9 w-full min-w-0 rounded-xl border border-zinc-200 bg-zinc-50 px-2 text-sm"
                       inputMode="numeric"
                       value={macroTargets.fiberG}
                       onChange={(e) =>
