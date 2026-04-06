@@ -101,6 +101,13 @@ type OffSearchItem = {
 }
 
 type MvtFood = { n: string; k: number; p: number; c: number; f: number; fi: number }
+type FavoriteFood = OffSearchItem & { source: 'mvt' | 'off' }
+type FoodUsageEntry = {
+  counts: Record<string, number>
+  lastGrams: number
+  bestGrams: number
+}
+
 let mvtCache: MvtFood[] | null = null
 async function loadMvt(): Promise<MvtFood[]> {
   if (mvtCache) return mvtCache
@@ -111,21 +118,64 @@ async function loadMvt(): Promise<MvtFood[]> {
   return mvtCache
 }
 
-function searchMvt(foods: MvtFood[], query: string): OffSearchItem[] {
-  const q = query.toLowerCase()
+function foodKey(food: Pick<OffSearchItem, 'code' | 'source'>) {
+  return `${food.source ?? 'off'}:${food.code}`
+}
+
+function normalizeGrams(grams: number) {
+  return Math.round(clampNumber(grams, 0.1, 2000) * 10) / 10
+}
+
+function preferredGrams(entry?: FoodUsageEntry) {
+  return entry?.bestGrams ?? entry?.lastGrams ?? 100
+}
+
+function nextFoodUsage(prev: FoodUsageEntry | undefined, grams: number): FoodUsageEntry {
+  const rounded = normalizeGrams(grams)
+  const key = String(rounded)
+  const counts = { ...(prev?.counts ?? {}) }
+  counts[key] = (counts[key] ?? 0) + 1
+  const bestKey = Object.entries(counts).sort((a, b) => b[1] - a[1] || Number(b[0]) - Number(a[0]))[0]?.[0]
+  return {
+    counts,
+    lastGrams: rounded,
+    bestGrams: bestKey ? Number(bestKey) : rounded,
+  }
+}
+
+function scoreFoodName(name: string, query: string) {
+  const q = query.trim().toLowerCase()
+  const nameLower = name.toLowerCase()
   const words = q.split(/\s+/).filter(Boolean)
+  if (words.length && !words.every((w) => nameLower.includes(w))) return null
+  let score = 0
+  if (!q) score += 10
+  if (nameLower === q) score += 200
+  if (nameLower.startsWith(q)) score += 100
+  if (nameLower.includes('rå')) score += 50
+  if (nameLower.includes('raw')) score += 25
+  score -= nameLower.length
+  return score
+}
+
+function searchFoodsInList(foods: OffSearchItem[], query: string) {
+  const scored = foods
+    .map((food) => {
+      const score = scoreFoodName(food.productName, query)
+      if (score == null) return null
+      return { food, score }
+    })
+    .filter((x): x is { food: OffSearchItem; score: number } => x !== null)
+
+  scored.sort((a, b) => b.score - a.score)
+  return scored.map((x) => x.food)
+}
+
+function searchMvt(foods: MvtFood[], query: string): OffSearchItem[] {
   const scored = foods
     .map((f) => {
-      const name = f.n.toLowerCase()
-      const allMatch = words.every((w) => name.includes(w))
-      if (!allMatch) return null
-      const startsWithQ = name.startsWith(q)
-      const isRaw = name.includes('rå')
-      let score = 0
-      if (startsWithQ) score += 100
-      if (isRaw) score += 50
-      if (name === q) score += 200
-      score -= name.length
+      const score = scoreFoodName(f.n, query)
+      if (score == null) return null
       return { food: f, score }
     })
     .filter((x): x is { food: MvtFood; score: number } => x !== null)
@@ -167,6 +217,7 @@ async function searchOffProducts(query: string, signal?: AbortSignal): Promise<O
         code: String(p.code ?? ''),
         productName: String(p.product_name ?? '').trim() || 'Unknown product',
         brands: typeof p.brands === 'string' ? p.brands.trim() || undefined : undefined,
+        source: 'off',
         imageUrl:
           typeof p.image_front_small_url === 'string' ? (p.image_front_small_url as string) : undefined,
         nutrimentsPer100g: {
@@ -338,10 +389,19 @@ function App() {
     key: 'calorieohhoi.diaryEntries.v1',
     defaultValue: [],
   })
+  const [favoriteFoods, setFavoriteFoods] = useLocalStorageState<FavoriteFood[]>({
+    key: 'calorieohhoi.favoriteFoods.v1',
+    defaultValue: [],
+  })
+  const [foodUsageByKey, setFoodUsageByKey] = useLocalStorageState<Record<string, FoodUsageEntry>>({
+    key: 'calorieohhoi.foodUsage.v1',
+    defaultValue: {},
+  })
 
   const [currentMeal, setCurrentMeal] = useState<Meal>('breakfast')
   const [selectedDateKey, setSelectedDateKey] = useState(() => toLocalDateKey(new Date()))
   const [addFoodOpen, setAddFoodOpen] = useState(false)
+  const [foodSearchMode, setFoodSearchMode] = useState<'all' | 'favorites'>('all')
   const [quickAddOpen, setQuickAddOpen] = useState(false)
   const [quickAddStep, setQuickAddStep] = useState<'meal' | 'method'>('meal')
   const [foodSearchQuery, setFoodSearchQuery] = useState('')
@@ -373,10 +433,18 @@ function App() {
     setFoodSearchQuery('')
     setSelectedFood(null)
     setManualGramsText('100')
+    setFoodSearchMode('all')
   }, [addFoodOpen])
 
   useEffect(() => {
     if (!addFoodOpen) return
+    if (foodSearchMode === 'favorites') {
+      setFoodSearchLoading(false)
+      setFoodSearchError(null)
+      setFoodSearchResults(searchFoodsInList(favoriteFoods, foodSearchQuery.trim()))
+      return
+    }
+
     const q = foodSearchQuery.trim()
     if (!q) {
       setFoodSearchResults([])
@@ -414,7 +482,12 @@ function App() {
       window.clearTimeout(t)
       controller.abort()
     }
-  }, [addFoodOpen, foodSearchQuery])
+  }, [addFoodOpen, favoriteFoods, foodSearchMode, foodSearchQuery])
+
+  useEffect(() => {
+    if (!selectedFood) return
+    setManualGramsText(String(preferredGrams(foodUsageByKey[foodKey(selectedFood)])))
+  }, [foodUsageByKey, selectedFood])
 
   function stopCamera() {
     if (scanLoopRef.current) {
@@ -654,6 +727,25 @@ function App() {
     setDiaryEntries((prev) => prev.filter((e) => e.id !== id))
   }
 
+  function rememberFoodUsage(food: Pick<OffSearchItem, 'code' | 'source'>, grams: number) {
+    const key = foodKey(food)
+    setFoodUsageByKey((prev) => ({
+      ...prev,
+      [key]: nextFoodUsage(prev[key], grams),
+    }))
+  }
+
+  function toggleFavoriteFood(food: OffSearchItem) {
+    const normalized: FavoriteFood = { ...food, source: food.source ?? 'off' }
+    const key = foodKey(normalized)
+    setFavoriteFoods((prev) => {
+      const exists = prev.some((f) => foodKey(f) === key)
+      return exists ? prev.filter((f) => foodKey(f) !== key) : [normalized, ...prev]
+    })
+  }
+
+  const favoriteFoodKeys = useMemo(() => new Set(favoriteFoods.map((food) => foodKey(food))), [favoriteFoods])
+
   async function fetchOffProduct(code: string) {
     const cleaned = code.replace(/\D/g, '')
     if (!cleaned) return
@@ -730,6 +822,7 @@ function App() {
       fiberG: round1((n.fiberG ?? 0) * factor),
     }
     setDiaryEntries((prev) => [entry, ...prev])
+    rememberFoodUsage({ code: offProduct.code, source: 'off' }, safeGrams)
   }
 
   function addSearchFoodToDiary(food: OffSearchItem, grams: number) {
@@ -1220,17 +1313,32 @@ function App() {
           <DialogContent className="!inset-0 !bottom-0 !top-0 !max-h-none !w-full !max-w-none !translate-x-0 !translate-y-0 !rounded-none sm:!inset-auto sm:!bottom-auto sm:!left-1/2 sm:!top-8 sm:!max-h-[85dvh] sm:!max-w-md sm:!-translate-x-1/2 sm:!translate-y-0 sm:!rounded-2xl overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Add food — {MEALS.find((m) => m.key === currentMeal)?.label}</DialogTitle>
-              <DialogDescription>Search Open Food Facts and add by grams.</DialogDescription>
+              <DialogDescription>Search all foods, favorite foods, or curated Norwegian foods and add by grams.</DialogDescription>
             </DialogHeader>
 
             <div className="grid gap-3">
+              <div className="grid grid-cols-2 gap-2 rounded-2xl bg-zinc-100 p-1">
+                <button
+                  className={`rounded-xl px-3 py-2 text-sm font-medium transition ${foodSearchMode === 'all' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500'}`}
+                  onClick={() => setFoodSearchMode('all')}
+                >
+                  All foods
+                </button>
+                <button
+                  className={`rounded-xl px-3 py-2 text-sm font-medium transition ${foodSearchMode === 'favorites' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500'}`}
+                  onClick={() => setFoodSearchMode('favorites')}
+                >
+                  Favorites
+                </button>
+              </div>
+
               <label className="grid gap-1">
                 <div className="text-xs text-zinc-500">Search</div>
                 <input
                   className="h-10 rounded-xl border border-zinc-200 bg-zinc-50 px-3 text-sm"
                   value={foodSearchQuery}
                   onChange={(e) => setFoodSearchQuery(e.target.value)}
-                  placeholder="e.g. eple / apple"
+                  placeholder={foodSearchMode === 'favorites' ? 'Search favorites' : 'e.g. eple / apple'}
                 />
               </label>
 
@@ -1252,10 +1360,22 @@ function App() {
                         className="h-12 w-12 rounded-xl border border-zinc-200 object-cover"
                       />
                     ) : null}
-                    <div className="min-w-0">
-                      <div className="truncate text-sm font-semibold text-zinc-900">{selectedFood.productName}</div>
-                      <div className="mt-1 text-xs text-zinc-500">
-                        {selectedFood.brands ? `${selectedFood.brands} • ` : ''}{selectedFood.code}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-semibold text-zinc-900">{selectedFood.productName}</div>
+                          <div className="mt-1 text-xs text-zinc-500">
+                            {selectedFood.brands ? `${selectedFood.brands} • ` : ''}{selectedFood.code}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          className={`shrink-0 rounded-full border px-2 py-1 text-xs font-medium ${favoriteFoodKeys.has(foodKey(selectedFood)) ? 'border-zinc-300 bg-zinc-100 text-zinc-900' : 'border-zinc-200 bg-white text-zinc-500'}`}
+                          onClick={() => toggleFavoriteFood(selectedFood)}
+                          aria-label={favoriteFoodKeys.has(foodKey(selectedFood)) ? 'Remove from favorites' : 'Add to favorites'}
+                        >
+                          {favoriteFoodKeys.has(foodKey(selectedFood)) ? '★' : '☆'}
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -1297,10 +1417,12 @@ function App() {
                 </div>
               ) : (
                 <div className="grid gap-2">
-                  {foodSearchResults.map((r) => (
+                  {foodSearchResults.map((r) => {
+                    const isFavorite = favoriteFoodKeys.has(foodKey(r))
+                    return (
                     <button
                       key={r.code}
-                      className={`flex items-center gap-3 rounded-2xl border p-3 text-left ${r.source === 'mvt' ? 'border-emerald-200 bg-emerald-50/50' : 'border-zinc-200 bg-white'}`}
+                      className={`relative flex items-center gap-3 rounded-2xl border p-3 pr-12 text-left ${r.source === 'mvt' ? 'border-zinc-200 bg-zinc-50' : 'border-zinc-200 bg-white'}`}
                       onClick={() => setSelectedFood(r)}
                     >
                       {r.imageUrl ? (
@@ -1310,21 +1432,43 @@ function App() {
                           className="h-10 w-10 rounded-xl border border-zinc-200 object-cover"
                         />
                       ) : (
-                        <div className={`grid h-10 w-10 place-items-center rounded-xl border text-lg ${r.source === 'mvt' ? 'border-emerald-200 bg-emerald-100' : 'border-zinc-200 bg-zinc-50'}`}>
-                          {r.source === 'mvt' ? '🇳🇴' : '🔍'}
+                        <div className={`grid h-10 w-10 place-items-center rounded-xl border text-lg ${r.source === 'mvt' ? 'border-zinc-200 bg-zinc-100 text-zinc-400' : 'border-zinc-200 bg-zinc-50'}`}>
+                          {r.source === 'mvt' ? '•' : '🔍'}
                         </div>
                       )}
                       <div className="min-w-0 flex-1">
                         <div className="truncate text-sm font-semibold text-zinc-900">{r.productName}</div>
                         <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-zinc-500">
-                          {r.source === 'mvt' && <span className="rounded bg-emerald-100 px-1 py-0.5 text-[9px] font-semibold text-emerald-700">MVT</span>}
+                          {r.source === 'mvt' && <span className="rounded bg-zinc-100 px-1 py-0.5 text-[9px] font-semibold text-zinc-600">MVT</span>}
                           {r.brands && r.source !== 'mvt' ? `${r.brands} · ` : ''}{r.nutrimentsPer100g.caloriesKcal ?? '?'} kcal/100g
                         </div>
                       </div>
+                      <span
+                        className={`absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer select-none rounded-full border px-2 py-1 text-xs font-medium ${isFavorite ? 'border-zinc-300 bg-zinc-100 text-zinc-900' : 'border-zinc-200 bg-white text-zinc-500'}`}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          toggleFavoriteFood(r)
+                        }}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            toggleFavoriteFood(r)
+                          }
+                        }}
+                        aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+                      >
+                        {isFavorite ? '★' : '☆'}
+                      </span>
                     </button>
-                  ))}
+                    )
+                  })}
                   {foodSearchQuery.trim() && !foodSearchLoading && foodSearchResults.length === 0 ? (
-                    <div className="rounded-2xl bg-zinc-50 p-3 text-sm text-zinc-600">No results.</div>
+                    <div className="rounded-2xl bg-zinc-50 p-3 text-sm text-zinc-600">
+                      {foodSearchMode === 'favorites' ? 'No matching favorites yet.' : 'No results.'}
+                    </div>
                   ) : null}
                 </div>
               )}
@@ -1694,6 +1838,8 @@ function App() {
                           className="h-7 w-16 min-w-0 rounded-lg border border-zinc-200 bg-zinc-50 px-1.5 text-center text-xs tabular-nums"
                           inputMode="numeric"
                           value={macroTargets[m.key]}
+                          aria-label={`${m.label} target in grams`}
+                          title={`${m.label} target`}
                           onChange={(e) =>
                             setMacroTargets((t) => ({ ...t, [m.key]: clampNumber(Number(e.target.value || 0), 0, m.max) }))
                           }
@@ -1707,6 +1853,8 @@ function App() {
                       max={m.max}
                       step={1}
                       value={macroTargets[m.key]}
+                      aria-label={`${m.label} target slider`}
+                      title={`${m.label} target slider`}
                       onChange={(e) =>
                         setMacroTargets((t) => ({ ...t, [m.key]: clampNumber(Number(e.target.value), 0, m.max) }))
                       }
