@@ -394,6 +394,8 @@ function App() {
   const [gramsText, setGramsText] = useState('100')
   const [servings, setServings] = useState(1)
   const [manualBarcodeEntry, setManualBarcodeEntry] = useState(false)
+  const [cameraTorchAvailable, setCameraTorchAvailable] = useState(false)
+  const [cameraTorchOn, setCameraTorchOn] = useState(false)
   const [recentFoods, setRecentFoods] = useLocalStorageState<RecentFoodEntry[]>({
     key: 'calorieohhoi.recentFoods.v1',
     defaultValue: [],
@@ -401,9 +403,12 @@ function App() {
   const [mealComposerItems, setMealComposerItems] = useState<MealComposerItem[]>([])
   const [composerTab, setComposerTab] = useState<'recent' | 'favorites'>('recent')
   const videoRef = useRef<HTMLVideoElement | null>(null)
+  const scanCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const barcodeInputRef = useRef<HTMLInputElement | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const scanLoopRef = useRef<number | null>(null)
+  const scanProcessingRef = useRef(false)
+  const scanFrameRef = useRef(0)
   const foundRef = useRef(false)
   const lastCandidateRef = useRef<string>('')
   const stableCountRef = useRef(0)
@@ -482,10 +487,55 @@ function App() {
       window.cancelAnimationFrame(scanLoopRef.current)
       scanLoopRef.current = null
     }
+    scanProcessingRef.current = false
+    scanFrameRef.current = 0
+    setCameraTorchAvailable(false)
+    setCameraTorchOn(false)
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop())
       streamRef.current = null
     }
+  }
+
+  async function setTorchEnabled(enabled: boolean) {
+    const track = streamRef.current?.getVideoTracks?.()[0]
+    if (!track) return false
+    const caps = track.getCapabilities?.() as { torch?: boolean } | undefined
+    if (!caps?.torch) return false
+    try {
+      await track.applyConstraints({ advanced: [{ torch: enabled } as never] } as never)
+      setCameraTorchOn(enabled)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  function getScanCanvas() {
+    const canvas = scanCanvasRef.current ?? document.createElement('canvas')
+    scanCanvasRef.current = canvas
+    return canvas
+  }
+
+  function drawScanFrame(video: HTMLVideoElement) {
+    const canvas = getScanCanvas()
+    const ctx = canvas.getContext('2d', { willReadFrequently: true })
+    if (!ctx) return null
+
+    const vw = video.videoWidth || 0
+    const vh = video.videoHeight || 0
+    if (!vw || !vh) return null
+
+    const cropMode = scanFrameRef.current % 3 !== 2
+    const cropWidth = cropMode ? Math.floor(vw * 0.88) : vw
+    const cropHeight = cropMode ? Math.floor(vh * 0.48) : vh
+    const cropX = Math.max(0, Math.floor((vw - cropWidth) / 2))
+    const cropY = cropMode ? Math.max(0, Math.floor(vh * 0.18)) : 0
+
+    canvas.width = cropWidth
+    canvas.height = cropHeight
+    ctx.drawImage(video, cropX, cropY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight)
+    return canvas
   }
 
   const canBarcodeDetect =
@@ -842,7 +892,11 @@ function App() {
     async function startCamera() {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: 'environment' } },
+          video: {
+            facingMode: { ideal: 'environment' },
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+          },
           audio: false,
         })
         if (cancelled) {
@@ -855,37 +909,52 @@ function App() {
         video.srcObject = stream
         await video.play()
 
-        const Detector = (window as unknown as { BarcodeDetector: new (arg?: unknown) => { detect: (v: HTMLVideoElement) => Promise<Array<{ rawValue?: string }> > } }).BarcodeDetector
-        const detector = new Detector({ formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'qr_code'] })
+        const track = stream.getVideoTracks()[0]
+        const caps = track?.getCapabilities?.() as { torch?: boolean; zoom?: { min?: number; max?: number } } | undefined
+        setCameraTorchAvailable(Boolean(caps?.torch))
+
+        if (caps?.torch) {
+          void setTorchEnabled(true)
+        }
+
+        const Detector = (window as unknown as { BarcodeDetector: new (arg?: unknown) => { detect: (v: HTMLVideoElement | HTMLCanvasElement) => Promise<Array<{ rawValue?: string }> > } }).BarcodeDetector
+        const detector = new Detector({ formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e'] })
 
         const loop = async () => {
           if (cancelled || foundRef.current) return
+          if (scanProcessingRef.current) {
+            scanLoopRef.current = window.requestAnimationFrame(loop)
+            return
+          }
+          scanProcessingRef.current = true
           try {
-            const barcodes = await detector.detect(video)
-            const value = barcodes?.[0]?.rawValue
+            scanFrameRef.current += 1
+            const source = drawScanFrame(video) ?? video
+            const barcodes = await detector.detect(source)
+            const value = barcodes
+              ?.map((b) => b.rawValue?.replace(/\D/g, ''))
+              .find((candidate) => candidate && (candidate.length === 13 || candidate.length === 8))
             if (value) {
-              const cleaned = value.replace(/\D/g, '')
-              const isComplete = cleaned.length === 13 || cleaned.length === 8
-              if (isComplete) {
-                if (cleaned === lastCandidateRef.current) {
-                  stableCountRef.current += 1
-                } else {
-                  lastCandidateRef.current = cleaned
-                  stableCountRef.current = 1
-                }
+              if (value === lastCandidateRef.current) {
+                stableCountRef.current += 1
+              } else {
+                lastCandidateRef.current = value
+                stableCountRef.current = 1
+              }
 
-                // Require the same complete code a few frames in a row (reduces missing digits)
-                if (stableCountRef.current >= 3) {
-                  foundRef.current = true
-                  setBarcode(cleaned)
-                  fetchProductByBarcode(cleaned)
-                  stopCamera()
-                  return
-                }
+              // Require the same complete code a few frames in a row (reduces false positives)
+              if (stableCountRef.current >= 2) {
+                foundRef.current = true
+                setBarcode(value)
+                void fetchProductByBarcode(value)
+                stopCamera()
+                return
               }
             }
           } catch {
             // ignore detection errors
+          } finally {
+            scanProcessingRef.current = false
           }
           scanLoopRef.current = window.requestAnimationFrame(loop)
         }
@@ -1586,12 +1655,45 @@ function App() {
               </div>
 
               {canBarcodeDetect ? (
-                <div className="mt-3 overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-50">
-                  <video ref={videoRef} className="h-40 w-full object-cover sm:h-56" muted playsInline />
+                <div className="mt-3 grid gap-3">
+                  <div className="relative overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-50">
+                    <video ref={videoRef} className="h-44 w-full object-cover sm:h-64" autoPlay muted playsInline />
+                    <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                      <div className="h-24 w-[76%] rounded-3xl border-2 border-emerald-400/90 bg-white/5 shadow-[0_0_0_9999px_rgba(9,9,11,0.18)] sm:h-28 sm:w-[68%]" />
+                    </div>
+                    <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-2 p-3 text-[11px] font-medium text-white">
+                      <span className="rounded-full bg-black/45 px-2.5 py-1 backdrop-blur-sm">Center the barcode</span>
+                      <span className="rounded-full bg-black/45 px-2.5 py-1 backdrop-blur-sm">
+                        {cameraTorchAvailable ? (cameraTorchOn ? 'Torch on' : 'Torch off') : 'Torch unavailable'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <Button
+                      variant={cameraTorchOn ? 'secondary' : 'outline'}
+                      onClick={() => {
+                        void setTorchEnabled(!cameraTorchOn)
+                      }}
+                      disabled={!cameraTorchAvailable}
+                    >
+                      {cameraTorchOn ? 'Flash on' : 'Flash off'}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setManualBarcodeEntry(true)
+                        stopCamera()
+                        window.setTimeout(() => barcodeInputRef.current?.focus(), 0)
+                      }}
+                    >
+                      Enter manually
+                    </Button>
+                  </div>
                 </div>
               ) : (
                 <div className="mt-3 rounded-2xl border border-zinc-200 bg-zinc-50 p-3 text-sm text-zinc-600">
-                  Camera barcode scanning isn’t supported in this browser yet.
+                  Camera barcode scanning isn’t supported in this browser yet. You can still enter the barcode manually.
                 </div>
               )}
 
@@ -1617,16 +1719,9 @@ function App() {
                   >
                     {offLoading ? 'Looking…' : 'Lookup'}
                   </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      setManualBarcodeEntry(true)
-                      stopCamera()
-                      window.setTimeout(() => barcodeInputRef.current?.focus(), 0)
-                    }}
-                  >
-                    Enter manually
-                  </Button>
+                  <div className="rounded-xl border border-dashed border-zinc-200 bg-white px-3 py-2 text-center text-xs text-zinc-500">
+                    Best results: hold the barcode flat and centered
+                  </div>
                 </div>
               </div>
             </div>
