@@ -2,6 +2,19 @@
   command = "npm run build"
   publish = "dist"
 
+[functions]
+  directory = "netlify/functions"
+
+[[redirects]]
+  from = "/api/kassal/search"
+  to = "/.netlify/functions/kassal-search"
+  status = 200
+
+[[redirects]]
+  from = "/api/kassal/ean/*"
+  to = "/.netlify/functions/kassal-ean"
+  status = 200
+
 [[redirects]]
   from = "/*"
   to = "/index.html"

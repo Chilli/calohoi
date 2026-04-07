@@ -197,88 +197,32 @@ function searchMvt(foods: MvtFood[], query: string): OffSearchItem[] {
   }))
 }
 
-const KASSAL_API_KEY = import.meta.env.VITE_KASSAL_API_KEY as string | undefined
-
-function parseKassalNutrition(nutrition: Array<{ code: string; amount: number; unit: string }>): FoodNutrients {
-  const get = (code: string) => {
-    const item = nutrition.find((n) => n.code === code)
-    return item ? item.amount : undefined
-  }
-  return {
-    caloriesKcal: get('energi_kcal') ?? (get('energi_kj') != null ? Math.round(get('energi_kj')! / 4.184) : undefined),
-    proteinG: get('protein'),
-    carbsG: get('karbohydrater'),
-    fatG: get('fett_totalt'),
-    fiberG: get('kostfiber'),
-  }
-}
-
 async function searchKassalProducts(query: string, signal?: AbortSignal): Promise<OffSearchItem[]> {
   const q = query.trim()
-  if (!q || !KASSAL_API_KEY) return []
-  const url = `https://kassal.app/api/v1/products?search=${encodeURIComponent(q)}&size=20`
+  if (!q) return []
+  const url = `/api/kassal/search?q=${encodeURIComponent(q)}`
   const res = await fetch(url, {
     signal,
-    headers: { Authorization: `Bearer ${KASSAL_API_KEY}` },
   })
   if (!res.ok) {
     if (res.status === 429) return []
     throw new Error(`Kassal request failed (${res.status})`)
   }
   const data: unknown = await res.json()
-  const root = data as { data?: Array<Record<string, unknown>> }
-  const products = root.data ?? []
-
-  return products
-    .map((p) => {
-      const nutritionRaw = Array.isArray(p.nutrition) ? (p.nutrition as Array<{ code: string; display_name: string; amount: number; unit: string }>) : []
-      const nutrients = parseKassalNutrition(nutritionRaw)
-
-      if (nutrients.caloriesKcal == null && nutritionRaw.length === 0) return null
-
-      const item: OffSearchItem = {
-        code: `kassal-${String(p.id ?? '')}`,
-        productName: String(p.name ?? '').trim() || 'Unknown product',
-        brands: typeof p.brand === 'string' ? p.brand.trim() || undefined : undefined,
-        source: 'kassal',
-        imageUrl: typeof p.image === 'string' ? (p.image as string) : undefined,
-        nutrimentsPer100g: nutrients,
-      }
-      return item
-    })
-    .filter((x): x is OffSearchItem => x !== null)
+  return Array.isArray(data) ? (data as OffSearchItem[]) : []
 }
 
 async function fetchKassalByEan(ean: string, signal?: AbortSignal): Promise<OffProduct | null> {
-  if (!KASSAL_API_KEY) return null
-  const url = `https://kassal.app/api/v1/products/ean/${encodeURIComponent(ean)}`
+  const cleaned = ean.replace(/\D/g, '')
+  if (!cleaned) return null
+  const url = `/api/kassal/ean/${encodeURIComponent(cleaned)}`
   const res = await fetch(url, {
     signal,
-    headers: { Authorization: `Bearer ${KASSAL_API_KEY}` },
   })
-  if (!res.ok) return null
+  if (res.status === 404) return null
+  if (!res.ok) throw new Error(`Kassal request failed (${res.status})`)
   const data: unknown = await res.json()
-  const root = data as { data?: { ean?: string; products?: Array<Record<string, unknown>>; nutrition?: Array<{ code: string; display_name: string; amount: number; unit: string }> } }
-  const d = root.data
-  if (!d) return null
-
-  const nutritionRaw = Array.isArray(d.nutrition) ? d.nutrition : []
-  const nutrients = parseKassalNutrition(nutritionRaw)
-
-  const firstProduct = Array.isArray(d.products) && d.products.length > 0 ? d.products[0] : null
-  const name = firstProduct ? String(firstProduct.name ?? '').trim() : ''
-  const brand = firstProduct && typeof firstProduct.brand === 'string' ? firstProduct.brand.trim() : undefined
-  const image = firstProduct && typeof firstProduct.image === 'string' ? (firstProduct.image as string) : undefined
-
-  if (!name) return null
-
-  return {
-    code: ean,
-    productName: name || 'Unknown product',
-    brands: brand || undefined,
-    imageUrl: image || undefined,
-    nutrimentsPer100g: nutrients,
-  }
+  return data as OffProduct | null
 }
 
 function round1(n: number) {
@@ -835,8 +779,8 @@ function App() {
       fiberG: round1((n.fiberG ?? 0) * factor),
     }
     setDiaryEntries((prev) => [entry, ...prev])
-    rememberFoodUsage({ code: offProduct.code, source: 'off' }, safeGrams)
-    trackRecentFood({ code: offProduct.code, productName: offProduct.productName, brands: offProduct.brands, imageUrl: offProduct.imageUrl, source: 'off', nutrimentsPer100g: offProduct.nutrimentsPer100g }, safeGrams)
+    rememberFoodUsage({ code: offProduct.code, source: 'kassal' }, safeGrams)
+    trackRecentFood({ code: offProduct.code, productName: offProduct.productName, brands: offProduct.brands, imageUrl: offProduct.imageUrl, source: 'kassal', nutrimentsPer100g: offProduct.nutrimentsPer100g }, safeGrams)
   }
 
   function addComposerItemsToDiary() {

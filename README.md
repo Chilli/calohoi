@@ -2,6 +2,13 @@
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
+## Kassalapp setup
+
+- The app now uses Netlify Functions for Kassalapp requests.
+- Set `KASSAL_API_KEY` as a server environment variable in Netlify.
+- For local Netlify testing, you can keep using your existing local `.env`; the proxy accepts both `KASSAL_API_KEY` and `VITE_KASSAL_API_KEY`.
+- The frontend calls `/api/kassal/search` and `/api/kassal/ean/:ean`, which are rewritten to Netlify Functions.
+
 Currently, two official plugins are available:
 
 - [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
